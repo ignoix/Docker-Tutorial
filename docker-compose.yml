@@ -1,0 +1,85 @@
+services:
+  # MySQL数据库服务
+  mysql:
+    build:
+      context: ./mysql
+      dockerfile: Dockerfile
+    container_name: docker-demo-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: docker_demo
+      MYSQL_USER: docker_user
+      MYSQL_PASSWORD: docker_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - docker-demo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+      start_period: 30s
+
+  # Node.js API服务
+  nodejs:
+    build:
+      context: ./nodejs
+      dockerfile: Dockerfile
+    container_name: docker-demo-api
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: docker_user
+      DB_PASSWORD: docker_pass
+      DB_NAME: docker_demo
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - docker-demo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      timeout: 10s
+      retries: 5
+      interval: 10s
+      start_period: 30s
+
+  # Nginx反向代理服务
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: docker-demo-nginx
+    ports:
+      - "80:80"
+    depends_on:
+      nodejs:
+        condition: service_healthy
+    networks:
+      - docker-demo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      timeout: 10s
+      retries: 5
+      interval: 10s
+      start_period: 30s
+
+# 数据卷
+volumes:
+  mysql_data:
+    driver: local
+
+# 网络
+networks:
+  docker-demo-network:
+    driver: bridge
